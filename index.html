@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Special Forces Factory</title>
+    <style>
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background: #1a1a1a;
+            color: white;
+            font-family: Arial, sans-serif;
+        }
+
+        #game-container {
+            display: grid;
+            grid-template-columns: repeat(10, 50px);
+            gap: 2px;
+            margin: 20px;
+        }
+
+        .cell {
+            width: 50px;
+            height: 50px;
+            background: #333;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 24px;
+            border: 1px solid #444;
+        }
+
+        .wall {
+            background: #666;
+        }
+
+        .player {
+            color: #00ff00;
+        }
+
+        .enemy {
+            color: #ff0000;
+        }
+
+        #status {
+            margin: 10px;
+            font-size: 20px;
+        }
+
+        #message {
+            height: 60px;
+            margin: 10px;
+            color: #ffd700;
+        }
+    </style>
+</head>
+<body>
+    <h1>Special Forces Factory</h1>
+    <div id="game-container"></div>
+    <div id="status">Health: 200</div>
+    <div id="message"></div>
+
+    <script>
+        class GameObject {
+            constructor(x, y, symbol, health, damage) {
+                this.x = x;
+                this.y = y;
+                this.symbol = symbol;
+                this.health = health;
+                this.damage = damage;
+            }
+        }
+
+        class Player extends GameObject {
+            constructor(x, y) {
+                super(x, y, 'P', 200, 30);
+            }
+        }
+
+        class Enemy extends GameObject {
+            constructor(x, y) {
+                super(x, y, 'T', 80, 15);
+            }
+        }
+
+        class Game {
+            constructor() {
+                this.width = 10;
+                this.height = 8;
+                this.map = [];
+                this.player = new Player(0, 0);
+                this.enemies = [];
+                this.isPlayerTurn = true;
+                this.initGame();
+                this.drawMap();
+                this.setupControls();
+            }
+
+            initGame() {
+                // Create empty map
+                this.map = Array(this.height).fill().map(() => 
+                    Array(this.width).fill('.'));
+
+                // Add walls
+                for(let y = 0; y < this.height; y++) {
+                    this.map[y][3] = '#';
+                    this.map[y][6] = '#';
+                }
+
+                // Create enemies
+                for(let i = 0; i < 3; i++) {
+                    let x, y;
+                    do {
+                        x = Math.floor(Math.random() * (this.width - 4)) + 4;
+                        y = Math.floor(Math.random() * this.height);
+                    } while(this.map[y][x] !== '.');
+                    
+                    this.enemies.push(new Enemy(x, y));
+                }
+            }
+
+            drawMap() {
+                const container = document.getElementById('game-container');
+                container.innerHTML = '';
+                
+                for(let y = 0; y < this.height; y++) {
+                    for(let x = 0; x < this.width; x++) {
+                        const cell = document.createElement('div');
+                        cell.className = 'cell';
+                        
+                        if(this.map[y][x] === '#') {
+                            cell.classList.add('wall');
+                            cell.textContent = '#';
+                        }
+                        
+                        if(this.player.x === x && this.player.y === y) {
+                            cell.classList.add('player');
+                            cell.textContent = this.player.symbol;
+                        }
+                        
+                        this.enemies.forEach(enemy => {
+                            if(enemy.x === x && enemy.y === y) {
+                                cell.classList.add('enemy');
+                                cell.textContent = enemy.symbol;
+                            }
+                        });
+
+                        container.appendChild(cell);
+                    }
+                }
+
+                document.getElementById('status').textContent = 
+                    `Health: ${this.player.health}`;
+            }
+
+            movePlayer(dx, dy) {
+                if(!this.isPlayerTurn) return;
+                
+                const newX = this.player.x + dx;
+                const newY = this.player.y + dy;
+                
+                if(this.isValidPosition(newX, newY)) {
+                    this.player.x = newX;
+                    this.player.y = newY;
+                    this.isPlayerTurn = false;
+                    this.enemyTurn();
+                }
+            }
+
+            attack() {
+                if(!this.isPlayerTurn) return;
+                
+                const directions = [
+                    {dx: -1, dy: 0}, {dx: 1, dy: 0},
+                    {dx: 0, dy: -1}, {dx: 0, dy: 1}
+                ];
+                
+                for(const dir of directions) {
+                    const target = this.enemies.find(enemy => 
+                        enemy.x === this.player.x + dir.dx && 
+                        enemy.y === this.player.y + dir.dy);
+                    
+                    if(target) {
+                        target.health -= this.player.damage;
+                        this.showMessage(`You hit terrorist! ${target.health} HP left`);
+                        
+                        if(target.health <= 0) {
+                            this.enemies = this.enemies.filter(e => e !== target);
+                            this.showMessage('Terrorist eliminated!');
+                        }
+                        
+                        this.isPlayerTurn = false;
+                        this.enemyTurn();
+                        return;
+                    }
+                }
+                
+                this.showMessage('No enemies in range!');
+            }
+
+            enemyTurn() {
+                setTimeout(() => {
+                    this.enemies.forEach(enemy => {
+                        if(this.calculateDistance(enemy, this.player) === 1) {
+                            this.player.health -= enemy.damage;
+                            this.showMessage(`Terrorist attacked you! ${this.player.health} HP left`);
+                        } else {
+                            this.moveEnemy(enemy);
+                        }
+                    });
+                    
+                    this.checkGameOver();
+                    this.isPlayerTurn = true;
+                    this.drawMap();
+                }, 500);
+            }
+
+            moveEnemy(enemy) {
+                const dx = Math.sign(this.player.x - enemy.x);
+                const dy = Math.sign(this.player.y - enemy.y);
+                
+                if(this.isValidPosition(enemy.x + dx, enemy.y + dy)) {
+                    enemy.x += dx;
+                    enemy.y += dy;
+                } else if(this.isValidPosition(enemy.x, enemy.y + dy)) {
+                    enemy.y += dy;
+                } else if(this.isValidPosition(enemy.x + dx, enemy.y)) {
+                    enemy.x += dx;
+                }
+            }
+
+            isValidPosition(x, y) {
+                return x >= 0 && x < this.width && 
+                       y >= 0 && y < this.height && 
+                       this.map[y][x] !== '#' && 
+                       !this.enemies.some(e => e.x === x && e.y === y);
+            }
+
+            calculateDistance(a, b) {
+                return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
+            }
+
+            showMessage(text) {
+                const msg = document.getElementById('message');
+                msg.textContent = text;
+            }
+
+            checkGameOver() {
+                if(this.player.health <= 0) {
+                    this.showMessage('Mission failed!');
+                    document.removeEventListener('keydown', this.handleKeyPress);
+                } else if(this.enemies.length === 0) {
+                    this.showMessage('Mission accomplished!');
+                    document.removeEventListener('keydown', this.handleKeyPress);
+                }
+            }
+
+            setupControls() {
+                this.handleKeyPress = (e) => {
+                    if(!this.isPlayerTurn) return;
+                    
+                    switch(e.key.toLowerCase()) {
+                        case 'arrowleft':
+                        case 'a':
+                            this.movePlayer(-1, 0);
+                            break;
+                        case 'arrowright':
+                        case 'd':
+                            this.movePlayer(1, 0);
+                            break;
+                        case 'arrowup':
+                        case 'w':
+                            this.movePlayer(0, -1);
+                            break;
+                        case 'arrowdown':
+                        case 's':
+                            this.movePlayer(0, 1);
+                            break;
+                        case ' ':
+                            this.attack();
+                            break;
+                    }
+                    this.drawMap();
+                };
+                
+                document.addEventListener('keydown', this.handleKeyPress);
+            }
+        }
+
+        // Start the game
+        new Game();
+    </script>
+</body>
+</html>
