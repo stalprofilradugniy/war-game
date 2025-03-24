@@ -4,7 +4,68 @@
     <meta charset="UTF-8">
     <title>Special Forces Maze</title>
     <style>
-        /* ... (стили остаются без изменений) ... */
+        body {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background: #1a1a1a;
+            color: white;
+            font-family: Arial, sans-serif;
+        }
+
+        #game-container {
+            display: grid;
+            grid-template-columns: repeat(25, 20px);
+            gap: 2px;
+            margin: 20px;
+        }
+
+        .cell {
+            width: 20px;
+            height: 20px;
+            background: #333;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 12px;
+            border: 1px solid #444;
+        }
+
+        .wall {
+            background: #666;
+        }
+
+        .player {
+            color: #00ff00;
+            font-weight: bold;
+        }
+
+        .enemy {
+            color: #ff0000;
+            font-weight: bold;
+        }
+
+        .portal {
+            color: #00ffff;
+            animation: glow 1s infinite alternate;
+        }
+
+        @keyframes glow {
+            from { box-shadow: 0 0 3px #00ffff; }
+            to { box-shadow: 0 0 8px #00ffff; }
+        }
+
+        #status {
+            margin: 10px;
+            font-size: 16px;
+        }
+
+        #message {
+            height: 40px;
+            margin: 10px;
+            color: #ffd700;
+            text-align: center;
+        }
     </style>
 </head>
 <body>
@@ -54,7 +115,7 @@
                 this.player = null;
                 this.enemies = [];
                 this.isPlayerTurn = true;
-                this.attemptCount = 0; // Счетчик попыток генерации
+                this.attemptCount = 0;
                 
                 this.initializeGame();
             }
@@ -81,7 +142,6 @@
             }
 
             generateMaze() {
-                // Генерация лабиринта с гарантированным стартом в (1,1)
                 this.map = Array(this.height).fill().map((_, y) => 
                     Array(this.width).fill().map((_, x) => 
                         (x % 2 === 0 || y % 2 === 0) ? '#' : '.'));
@@ -110,19 +170,37 @@
                     stack.push(next);
                 }
 
-                // Гарантируем, что стартовая позиция свободна
                 this.map[1][1] = '.';
             }
 
+            getUnvisitedNeighbors(x, y) {
+                const neighbors = [];
+                const directions = [
+                    {dx: 2, dy: 0}, {dx: -2, dy: 0},
+                    {dx: 0, dy: 2}, {dx: 0, dy: -2}
+                ];
+
+                for(const dir of directions) {
+                    const nx = x + dir.dx;
+                    const ny = y + dir.dy;
+                    if(nx >= 1 && nx < this.width-1 && 
+                       ny >= 1 && ny < this.height-1 && 
+                       this.map[ny][nx] === '#') {
+                        neighbors.push({x: nx, y: ny});
+                    }
+                }
+                return neighbors;
+            }
+
             placePlayer() {
-                // Проверяем и исправляем стартовую позицию
                 if(this.map[1][1] === '.') {
                     this.player = new Player(1, 1);
                 } else {
                     const freeCells = this.getFreeCells();
-                    if(freeCells.length === 0) return;
-                    const [x, y] = freeCells[0];
-                    this.player = new Player(x, y);
+                    if(freeCells.length > 0) {
+                        const [x, y] = freeCells[0];
+                        this.player = new Player(x, y);
+                    }
                 }
             }
 
@@ -158,15 +236,20 @@
                 return count >= totalFree * 0.95;
             }
 
-            placeEnemies() {
-                const freeCells = this.getFreeCells().filter(([x, y]) => 
-                    !(x === this.player.x && y === this.player.y));
+            placePortals() {
+                const portalCount = 3 + Math.floor(Math.random() * 3);
+                const freeCells = this.getFreeCells();
                 
-                for(let i = 0; i < 5; i++) {
-                    if(freeCells.length === 0) break;
-                    const idx = Math.floor(Math.random() * freeCells.length);
-                    const [x, y] = freeCells.splice(idx, 1)[0];
-                    this.enemies.push(new Enemy(x, y));
+                for(let i = 0; i < portalCount; i++) {
+                    if(freeCells.length < 2) break;
+                    
+                    const idx1 = Math.floor(Math.random() * freeCells.length);
+                    const [x1, y1] = freeCells.splice(idx1, 1)[0];
+                    const idx2 = Math.floor(Math.random() * freeCells.length);
+                    const [x2, y2] = freeCells.splice(idx2, 1)[0];
+                    
+                    this.portals.push(new Portal(x1, y1, i));
+                    this.portals.push(new Portal(x2, y2, i));
                 }
             }
 
@@ -183,10 +266,219 @@
                 return cells;
             }
 
-            // ... (остальные методы остаются без изменений) ...
+            placeEnemies() {
+                const freeCells = this.getFreeCells().filter(([x, y]) => 
+                    !(x === this.player.x && y === this.player.y));
+                
+                for(let i = 0; i < 5; i++) {
+                    if(freeCells.length === 0) break;
+                    const idx = Math.floor(Math.random() * freeCells.length);
+                    const [x, y] = freeCells.splice(idx, 1)[0];
+                    this.enemies.push(new Enemy(x, y));
+                }
+            }
+
+            drawMap() {
+                const container = document.getElementById('game-container');
+                container.innerHTML = '';
+                
+                for(let y = 0; y < this.height; y++) {
+                    for(let x = 0; x < this.width; x++) {
+                        const cell = document.createElement('div');
+                        cell.className = 'cell';
+                        
+                        if(this.map[y][x] === '#') {
+                            cell.classList.add('wall');
+                        }
+                        
+                        const portal = this.portals.find(p => p.x === x && p.y === y);
+                        if(portal) {
+                            cell.classList.add('portal');
+                            cell.textContent = portal.symbol;
+                        }
+
+                        if(this.player && this.player.x === x && this.player.y === y) {
+                            cell.classList.add('player');
+                            cell.textContent = this.player.symbol;
+                        }
+
+                        this.enemies.forEach(enemy => {
+                            if(enemy.x === x && enemy.y === y) {
+                                cell.classList.add('enemy');
+                                cell.textContent = enemy.symbol;
+                            }
+                        });
+
+                        container.appendChild(cell);
+                    }
+                }
+
+                document.getElementById('status').textContent = 
+                    `Health: ${this.player?.health ?? 0}`;
+            }
+
+            movePlayer(dx, dy) {
+                if(!this.isPlayerTurn || !this.player) return;
+                
+                const newX = this.player.x + dx;
+                const newY = this.player.y + dy;
+                
+                if(this.isValidPosition(newX, newY)) {
+                    this.player.x = newX;
+                    this.player.y = newY;
+                    this.checkPortal();
+                    this.isPlayerTurn = false;
+                    this.enemyTurn();
+                }
+            }
+
+            checkPortal() {
+                const portal = this.portals.find(p => 
+                    p.x === this.player.x && p.y === this.player.y);
+                
+                if(portal) {
+                    const pair = this.portals.find(p => 
+                        p.pairId === portal.pairId && p !== portal);
+                    if(pair) {
+                        this.player.x = pair.x;
+                        this.player.y = pair.y;
+                        this.showMessage('Teleported through portal!');
+                    }
+                }
+            }
+
+            attack() {
+                if(!this.isPlayerTurn || !this.player) return;
+                
+                const directions = [
+                    {dx: -1, dy: 0}, {dx: 1, dy: 0},
+                    {dx: 0, dy: -1}, {dx: 0, dy: 1}
+                ];
+                
+                for(const dir of directions) {
+                    const target = this.enemies.find(enemy => 
+                        enemy.x === this.player.x + dir.dx && 
+                        enemy.y === this.player.y + dir.dy);
+                    
+                    if(target) {
+                        target.health -= this.player.damage;
+                        this.showMessage(`You hit terrorist! ${target.health} HP left`);
+                        
+                        if(target.health <= 0) {
+                            this.enemies = this.enemies.filter(e => e !== target);
+                            this.showMessage('Terrorist eliminated!');
+                        }
+                        
+                        this.isPlayerTurn = false;
+                        this.enemyTurn();
+                        return;
+                    }
+                }
+                
+                this.showMessage('No enemies in range!');
+            }
+
+            enemyTurn() {
+                setTimeout(() => {
+                    this.enemies.forEach(enemy => {
+                        if(this.calculateDistance(enemy, this.player) === 1) {
+                            this.player.health -= enemy.damage;
+                            this.showMessage(`Terrorist attacked you! ${this.player.health} HP left`);
+                        } else {
+                            this.moveEnemy(enemy);
+                        }
+                    });
+                    
+                    this.checkGameOver();
+                    this.isPlayerTurn = true;
+                    this.drawMap();
+                }, 300);
+            }
+
+            moveEnemy(enemy) {
+                const dx = Math.sign(this.player.x - enemy.x);
+                const dy = Math.sign(this.player.y - enemy.y);
+                
+                if(this.isValidPosition(enemy.x + dx, enemy.y + dy, true)) {
+                    enemy.x += dx;
+                    enemy.y += dy;
+                } else {
+                    const directions = [
+                        {dx: 0, dy: dy},
+                        {dx: dx, dy: 0},
+                        {dx: 0, dy: -dy},
+                        {dx: -dx, dy: 0}
+                    ];
+                    
+                    for(const dir of directions) {
+                        if(this.isValidPosition(enemy.x + dir.dx, enemy.y + dir.dy, true)) {
+                            enemy.x += dir.dx;
+                            enemy.y += dir.dy;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            isValidPosition(x, y, forEnemy = false) {
+                if(x < 0 || x >= this.width || y < 0 || y >= this.height) return false;
+                if(this.map[y][x] === '#') return false;
+                if(!forEnemy && this.enemies.some(e => e.x === x && e.y === y)) return false;
+                return true;
+            }
+
+            calculateDistance(a, b) {
+                return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
+            }
+
+            showMessage(text) {
+                const msg = document.getElementById('message');
+                msg.textContent = text;
+                setTimeout(() => msg.textContent = '', 2000);
+            }
+
+            checkGameOver() {
+                if(this.player.health <= 0) {
+                    this.showMessage('Mission failed!');
+                    document.removeEventListener('keydown', this.handleKeyPress);
+                } else if(this.enemies.length === 0) {
+                    this.showMessage('Mission accomplished!');
+                    document.removeEventListener('keydown', this.handleKeyPress);
+                }
+            }
+
+            setupControls() {
+                this.handleKeyPress = (e) => {
+                    if(!this.isPlayerTurn || !this.player) return;
+                    
+                    switch(e.key.toLowerCase()) {
+                        case 'arrowleft':
+                        case 'a':
+                            this.movePlayer(-1, 0);
+                            break;
+                        case 'arrowright':
+                        case 'd':
+                            this.movePlayer(1, 0);
+                            break;
+                        case 'arrowup':
+                        case 'w':
+                            this.movePlayer(0, -1);
+                            break;
+                        case 'arrowdown':
+                        case 's':
+                            this.movePlayer(0, 1);
+                            break;
+                        case ' ':
+                            this.attack();
+                            break;
+                    }
+                    this.drawMap();
+                };
+                
+                document.addEventListener('keydown', this.handleKeyPress);
+            }
         }
 
-        // Запуск игры
         new Game();
     </script>
 </body>
