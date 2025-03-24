@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Special Forces Factory</title>
+    <title>Special Forces Maze</title>
     <style>
         body {
             display: flex;
@@ -15,19 +15,19 @@
 
         #game-container {
             display: grid;
-            grid-template-columns: repeat(10, 50px);
+            grid-template-columns: repeat(25, 20px);
             gap: 2px;
             margin: 20px;
         }
 
         .cell {
-            width: 50px;
-            height: 50px;
+            width: 20px;
+            height: 20px;
             background: #333;
             display: flex;
             justify-content: center;
             align-items: center;
-            font-size: 24px;
+            font-size: 12px;
             border: 1px solid #444;
         }
 
@@ -37,26 +37,39 @@
 
         .player {
             color: #00ff00;
+            font-weight: bold;
         }
 
         .enemy {
             color: #ff0000;
+            font-weight: bold;
+        }
+
+        .portal {
+            color: #00ffff;
+            animation: glow 1s infinite alternate;
+        }
+
+        @keyframes glow {
+            from { box-shadow: 0 0 3px #00ffff; }
+            to { box-shadow: 0 0 8px #00ffff; }
         }
 
         #status {
             margin: 10px;
-            font-size: 20px;
+            font-size: 16px;
         }
 
         #message {
-            height: 60px;
+            height: 40px;
             margin: 10px;
             color: #ffd700;
+            text-align: center;
         }
     </style>
 </head>
 <body>
-    <h1>Special Forces Factory</h1>
+    <h1>Special Forces Maze</h1>
     <div id="game-container"></div>
     <div id="status">Health: 200</div>
     <div id="message"></div>
@@ -84,40 +97,165 @@
             }
         }
 
+        class Portal {
+            constructor(x, y, pairId) {
+                this.x = x;
+                this.y = y;
+                this.symbol = 'O';
+                this.pairId = pairId;
+            }
+        }
+
         class Game {
             constructor() {
-                this.width = 10;
-                this.height = 8;
+                this.width = 25;
+                this.height = 15;
                 this.map = [];
-                this.player = new Player(0, 0);
+                this.portals = [];
+                this.player = null;
                 this.enemies = [];
                 this.isPlayerTurn = true;
+                
+                this.generateMaze();
+                this.placePortals();
                 this.initGame();
                 this.drawMap();
                 this.setupControls();
             }
 
-            initGame() {
-                // Create empty map
-                this.map = Array(this.height).fill().map(() => 
-                    Array(this.width).fill('.'));
+            generateMaze() {
+                // Initialize maze with walls
+                this.map = Array(this.height).fill().map((_, y) => 
+                    Array(this.width).fill().map((_, x) => 
+                        (x % 2 === 0 || y % 2 === 0) ? '#' : '.'));
 
-                // Add walls
+                const stack = [];
+                const start = {x: 1, y: 1};
+                stack.push(start);
+
+                while(stack.length > 0) {
+                    const current = stack[stack.length-1];
+                    const neighbors = this.getUnvisitedNeighbors(current.x, current.y);
+                    
+                    if(neighbors.length === 0) {
+                        stack.pop();
+                        continue;
+                    }
+
+                    const next = neighbors[Math.floor(Math.random() * neighbors.length)];
+                    const wall = {
+                        x: current.x + (next.x - current.x)/2,
+                        y: current.y + (next.y - current.y)/2
+                    };
+                    
+                    this.map[wall.y][wall.x] = '.';
+                    this.map[next.y][next.x] = '.';
+                    stack.push(next);
+                }
+            }
+
+            getUnvisitedNeighbors(x, y) {
+                const neighbors = [];
+                const directions = [
+                    {dx: 2, dy: 0}, {dx: -2, dy: 0},
+                    {dx: 0, dy: 2}, {dx: 0, dy: -2}
+                ];
+
+                for(const dir of directions) {
+                    const nx = x + dir.dx;
+                    const ny = y + dir.dy;
+                    if(nx >= 1 && nx < this.width-1 && 
+                       ny >= 1 && ny < this.height-1 && 
+                       this.map[ny][nx] === '#') {
+                        neighbors.push({x: nx, y: ny});
+                    }
+                }
+                return neighbors;
+            }
+
+            placePortals() {
+                const portalCount = 3 + Math.floor(Math.random() * 3);
+                const freeCells = this.getFreeCells();
+                
+                for(let i = 0; i < portalCount; i++) {
+                    if(freeCells.length < 2) break;
+                    
+                    const idx1 = Math.floor(Math.random() * freeCells.length);
+                    const [x1, y1] = freeCells.splice(idx1, 1)[0];
+                    const idx2 = Math.floor(Math.random() * freeCells.length);
+                    const [x2, y2] = freeCells.splice(idx2, 1)[0];
+                    
+                    this.portals.push(new Portal(x1, y1, i));
+                    this.portals.push(new Portal(x2, y2, i));
+                }
+            }
+
+            getFreeCells() {
+                const cells = [];
                 for(let y = 0; y < this.height; y++) {
-                    this.map[y][3] = '#';
-                    this.map[y][6] = '#';
+                    for(let x = 0; x < this.width; x++) {
+                        if(this.map[y][x] === '.' && 
+                           !this.portals.some(p => p.x === x && p.y === y)) {
+                            cells.push([x, y]);
+                        }
+                    }
+                }
+                return cells;
+            }
+
+            initGame() {
+                // Validate maze connectivity
+                if(!this.isMazeValid()) {
+                    this.generateMaze();
+                    this.placePortals();
+                    this.initGame();
+                    return;
                 }
 
-                // Create enemies
-                for(let i = 0; i < 3; i++) {
-                    let x, y;
-                    do {
-                        x = Math.floor(Math.random() * (this.width - 4)) + 4;
-                        y = Math.floor(Math.random() * this.height);
-                    } while(this.map[y][x] !== '.');
-                    
+                // Place player
+                const startCell = this.getFreeCells().find(([x, y]) => x === 1 && y === 1);
+                this.player = new Player(startCell[0], startCell[1]);
+
+                // Place enemies
+                const freeCells = this.getFreeCells().filter(([x, y]) => 
+                    !(x === this.player.x && y === this.player.y));
+                
+                for(let i = 0; i < 5; i++) {
+                    if(freeCells.length === 0) break;
+                    const idx = Math.floor(Math.random() * freeCells.length);
+                    const [x, y] = freeCells.splice(idx, 1)[0];
                     this.enemies.push(new Enemy(x, y));
                 }
+            }
+
+            isMazeValid() {
+                const visited = Array(this.height).fill().map(() => 
+                    Array(this.width).fill(false));
+                const queue = [[this.player.x, this.player.y]];
+                let count = 0;
+
+                while(queue.length > 0) {
+                    const [x, y] = queue.shift();
+                    if(visited[y][x]) continue;
+                    visited[y][x] = true;
+                    count++;
+
+                    const directions = [
+                        [1, 0], [-1, 0], [0, 1], [0, -1]
+                    ];
+                    for(const [dx, dy] of directions) {
+                        const nx = x + dx;
+                        const ny = y + dy;
+                        if(nx >= 0 && nx < this.width && 
+                           ny >= 0 && ny < this.height && 
+                           this.map[ny][nx] === '.' && !visited[ny][nx]) {
+                            queue.push([nx, ny]);
+                        }
+                    }
+                }
+
+                const totalFree = this.getFreeCells().length;
+                return count >= totalFree * 0.95; // Allow 5% error margin
             }
 
             drawMap() {
@@ -131,14 +269,22 @@
                         
                         if(this.map[y][x] === '#') {
                             cell.classList.add('wall');
-                            cell.textContent = '#';
                         }
                         
+                        // Draw portals
+                        const portal = this.portals.find(p => p.x === x && p.y === y);
+                        if(portal) {
+                            cell.classList.add('portal');
+                            cell.textContent = portal.symbol;
+                        }
+
+                        // Draw player
                         if(this.player.x === x && this.player.y === y) {
                             cell.classList.add('player');
                             cell.textContent = this.player.symbol;
                         }
-                        
+
+                        // Draw enemies
                         this.enemies.forEach(enemy => {
                             if(enemy.x === x && enemy.y === y) {
                                 cell.classList.add('enemy');
@@ -163,8 +309,24 @@
                 if(this.isValidPosition(newX, newY)) {
                     this.player.x = newX;
                     this.player.y = newY;
+                    this.checkPortal();
                     this.isPlayerTurn = false;
                     this.enemyTurn();
+                }
+            }
+
+            checkPortal() {
+                const portal = this.portals.find(p => 
+                    p.x === this.player.x && p.y === this.player.y);
+                
+                if(portal) {
+                    const pair = this.portals.find(p => 
+                        p.pairId === portal.pairId && p !== portal);
+                    if(pair) {
+                        this.player.x = pair.x;
+                        this.player.y = pair.y;
+                        this.showMessage('Teleported through portal!');
+                    }
                 }
             }
 
@@ -213,28 +375,48 @@
                     this.checkGameOver();
                     this.isPlayerTurn = true;
                     this.drawMap();
-                }, 500);
+                }, 300);
             }
 
             moveEnemy(enemy) {
                 const dx = Math.sign(this.player.x - enemy.x);
                 const dy = Math.sign(this.player.y - enemy.y);
                 
-                if(this.isValidPosition(enemy.x + dx, enemy.y + dy)) {
+                // Try primary direction first
+                if(this.isValidPosition(enemy.x + dx, enemy.y + dy, true)) {
                     enemy.x += dx;
                     enemy.y += dy;
-                } else if(this.isValidPosition(enemy.x, enemy.y + dy)) {
-                    enemy.y += dy;
-                } else if(this.isValidPosition(enemy.x + dx, enemy.y)) {
-                    enemy.x += dx;
+                } 
+                // Try secondary directions
+                else {
+                    const directions = [
+                        {dx: 0, dy: dy},
+                        {dx: dx, dy: 0},
+                        {dx: 0, dy: -dy},
+                        {dx: -dx, dy: 0}
+                    ];
+                    
+                    for(const dir of directions) {
+                        if(this.isValidPosition(enemy.x + dir.dx, enemy.y + dir.dy, true)) {
+                            enemy.x += dir.dx;
+                            enemy.y += dir.dy;
+                            break;
+                        }
+                    }
                 }
             }
 
-            isValidPosition(x, y) {
-                return x >= 0 && x < this.width && 
-                       y >= 0 && y < this.height && 
-                       this.map[y][x] !== '#' && 
-                       !this.enemies.some(e => e.x === x && e.y === y);
+            isValidPosition(x, y, forEnemy = false) {
+                // Check boundaries
+                if(x < 0 || x >= this.width || y < 0 || y >= this.height) return false;
+                
+                // Check walls
+                if(this.map[y][x] === '#') return false;
+                
+                // Check other entities
+                if(!forEnemy && this.enemies.some(e => e.x === x && e.y === y)) return false;
+                
+                return true;
             }
 
             calculateDistance(a, b) {
@@ -244,6 +426,7 @@
             showMessage(text) {
                 const msg = document.getElementById('message');
                 msg.textContent = text;
+                setTimeout(() => msg.textContent = '', 2000);
             }
 
             checkGameOver() {
